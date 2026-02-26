@@ -309,7 +309,7 @@ export class TUI extends Container {
 			component,
 			options: { ...options },
 			hidden: false,
-			separator: options.separator ?? "│",
+			separator: options.separator ?? "",
 		};
 		this.dock = entry;
 		this.requestRender();
@@ -633,8 +633,8 @@ export class TUI extends Container {
 			return super.render(width);
 		}
 
-		const separator = this.dock.separator || "│";
-		const separatorWidth = Math.max(1, visibleWidth(separator));
+		const separator = this.dock.separator;
+		const separatorWidth = visibleWidth(separator);
 		const dockWidth = this.resolveDockWidth(this.dock.options, width, separatorWidth);
 		const mainWidth = Math.max(1, width - dockWidth - separatorWidth);
 

@@ -40,7 +40,7 @@ describe("TUI dock layout", () => {
 		const firstLine = viewport[0] ?? "";
 
 		assert.ok(firstLine.includes("dock-line"), `expected dock content in first line: ${firstLine}`);
-		assert.ok(firstLine.includes("│"), `expected separator in first line: ${firstLine}`);
+		assert.ok(!firstLine.includes("│"), `did not expect separator in first line: ${firstLine}`);
 		assert.ok(firstLine.includes("main-line"), `expected main content in first line: ${firstLine}`);
 
 		tui.stop();
