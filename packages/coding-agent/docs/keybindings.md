@@ -84,6 +84,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, etc.
 | `tree` | *(none)* | Open session tree navigator (`/tree`) |
 | `fork` | *(none)* | Fork current session (`/fork`) |
 | `resume` | *(none)* | Open session resume picker (`/resume`) |
+| `toggleDockFocus` | `ctrl+\`` | Toggle focus between left dock and main editor |
 
 ### Models & Thinking
 

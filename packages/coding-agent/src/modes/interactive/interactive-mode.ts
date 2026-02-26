@@ -55,6 +55,7 @@ import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../.
 import type { CompactionResult } from "../../core/compaction/index.js";
 import type {
 	ExtensionContext,
+	ExtensionLeftDockOptions,
 	ExtensionRunner,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -228,6 +229,13 @@ export class InteractiveMode {
 	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
 	private widgetContainerAbove!: Container;
 	private widgetContainerBelow!: Container;
+
+	private extensionLeftDocks = new Map<
+		string,
+		{ component: Component & { dispose?(): void }; options?: ExtensionLeftDockOptions }
+	>();
+	private activeLeftDockKey: string | undefined;
+	private dockFocusInputUnsubscribe: (() => void) | undefined;
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
@@ -468,6 +476,7 @@ export class InteractiveMode {
 
 		// Start the UI
 		this.ui.start();
+		this.setupDockFocusHotkey();
 		this.isInitialized = true;
 
 		// Set terminal title
@@ -1217,6 +1226,69 @@ export class InteractiveMode {
 		this.renderWidgets();
 	}
 
+	private setExtensionLeftDock(
+		key: string,
+		content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
+		options?: ExtensionLeftDockOptions,
+	): void {
+		const existing = this.extensionLeftDocks.get(key);
+		existing?.component.dispose?.();
+		this.extensionLeftDocks.delete(key);
+
+		if (content === undefined) {
+			if (this.activeLeftDockKey === key) {
+				this.activeLeftDockKey = undefined;
+			}
+			this.renderLeftDock();
+			return;
+		}
+
+		let component: Component & { dispose?(): void };
+		if (Array.isArray(content)) {
+			const container = new Container();
+			for (const line of content.slice(0, InteractiveMode.MAX_WIDGET_LINES)) {
+				container.addChild(new Text(line, 1, 0));
+			}
+			if (content.length > InteractiveMode.MAX_WIDGET_LINES) {
+				container.addChild(new Text(theme.fg("muted", "... (dock truncated)"), 1, 0));
+			}
+			component = container;
+		} else {
+			component = content(this.ui, theme);
+		}
+
+		this.extensionLeftDocks.set(key, { component, options });
+		this.activeLeftDockKey = key;
+		this.renderLeftDock(options?.focus === true);
+	}
+
+	private renderLeftDock(focus = false): void {
+		if (this.extensionLeftDocks.size === 0) {
+			this.ui.hideDock();
+			return;
+		}
+
+		const key = this.activeLeftDockKey;
+		const selected = key ? this.extensionLeftDocks.get(key) : undefined;
+		const entry = selected ?? Array.from(this.extensionLeftDocks.values())[this.extensionLeftDocks.size - 1];
+		if (!entry) return;
+
+		this.ui.showDock(entry.component, entry.options);
+		if (focus) {
+			this.ui.focusDock();
+		}
+		this.ui.requestRender();
+	}
+
+	private clearExtensionLeftDocks(): void {
+		for (const dock of this.extensionLeftDocks.values()) {
+			dock.component.dispose?.();
+		}
+		this.extensionLeftDocks.clear();
+		this.activeLeftDockKey = undefined;
+		this.ui.hideDock();
+	}
+
 	private clearExtensionWidgets(): void {
 		for (const widget of this.extensionWidgetsAbove.values()) {
 			widget.dispose?.();
@@ -1407,6 +1479,7 @@ export class InteractiveMode {
 				}
 			},
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
+			setLeftDock: (key, content, options) => this.setExtensionLeftDock(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
@@ -1831,6 +1904,9 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("resume", () => this.showSessionSelector());
+		this.defaultEditor.onAction("toggleDockFocus", () => {
+			this.ui.toggleDockFocus();
+		});
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1844,6 +1920,21 @@ export class InteractiveMode {
 		this.defaultEditor.onPasteImage = () => {
 			this.handleClipboardImagePaste();
 		};
+	}
+
+	private setupDockFocusHotkey(): void {
+		if (this.dockFocusInputUnsubscribe) {
+			this.dockFocusInputUnsubscribe();
+		}
+		this.dockFocusInputUnsubscribe = this.ui.addInputListener((data) => {
+			if (!this.keybindings.matches(data, "toggleDockFocus")) {
+				return undefined;
+			}
+			if (this.ui.toggleDockFocus()) {
+				return { consume: true };
+			}
+			return undefined;
+		});
 	}
 
 	private async handleClipboardImagePaste(): Promise<void> {
@@ -4070,6 +4161,7 @@ export class InteractiveMode {
 		const externalEditor = this.getAppKeyDisplay("externalEditor");
 		const followUp = this.getAppKeyDisplay("followUp");
 		const dequeue = this.getAppKeyDisplay("dequeue");
+		const toggleDockFocus = this.getAppKeyDisplay("toggleDockFocus");
 
 		let hotkeys = `
 **Navigation**
@@ -4112,6 +4204,7 @@ export class InteractiveMode {
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |
 | \`${dequeue}\` | Restore queued messages |
+| \`${toggleDockFocus}\` | Toggle focus between dock and main editor |
 | \`Ctrl+V\` | Paste image from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
@@ -4382,7 +4475,12 @@ export class InteractiveMode {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
 		}
+		if (this.dockFocusInputUnsubscribe) {
+			this.dockFocusInputUnsubscribe();
+			this.dockFocusInputUnsubscribe = undefined;
+		}
 		this.clearExtensionTerminalInputListeners();
+		this.clearExtensionLeftDocks();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {

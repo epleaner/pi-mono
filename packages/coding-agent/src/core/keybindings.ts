@@ -33,7 +33,8 @@ export type AppAction =
 	| "newSession"
 	| "tree"
 	| "fork"
-	| "resume";
+	| "resume"
+	| "toggleDockFocus";
 
 /**
  * All configurable actions.
@@ -70,6 +71,7 @@ export const DEFAULT_APP_KEYBINDINGS: Record<AppAction, KeyId | KeyId[]> = {
 	tree: [],
 	fork: [],
 	resume: [],
+	toggleDockFocus: "ctrl+`",
 };
 
 /**
@@ -101,6 +103,7 @@ const APP_ACTIONS: AppAction[] = [
 	"tree",
 	"fork",
 	"resume",
+	"toggleDockFocus",
 ];
 
 function isAppAction(action: string): action is AppAction {

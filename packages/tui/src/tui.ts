@@ -159,6 +159,19 @@ export interface OverlayHandle {
 	isHidden(): boolean;
 }
 
+export interface DockOptions {
+	width?: SizeValue;
+	minWidth?: number;
+	maxWidth?: number;
+	separator?: string;
+}
+
+export interface DockHandle {
+	hide(): void;
+	setWidth(width: SizeValue): void;
+	focus(): void;
+}
+
 /**
  * Container - a component that contains other components
  */
@@ -227,6 +240,14 @@ export class TUI extends Container {
 		hidden: boolean;
 	}[] = [];
 
+	private dock: {
+		component: Component;
+		options: DockOptions;
+		hidden: boolean;
+		separator: string;
+	} | null = null;
+	private lastMainFocus: Component | null = null;
+
 	constructor(terminal: Terminal, showHardwareCursor?: boolean) {
 		super();
 		this.terminal = terminal;
@@ -273,10 +294,78 @@ export class TUI extends Container {
 
 		this.focusedComponent = component;
 
+		if (this.dock && component && component !== this.dock.component) {
+			this.lastMainFocus = component;
+		}
+
 		// Set focused flag on new component
 		if (isFocusable(component)) {
 			component.focused = true;
 		}
+	}
+
+	showDock(component: Component, options: DockOptions = {}): DockHandle {
+		const entry = {
+			component,
+			options: { ...options },
+			hidden: false,
+			separator: options.separator ?? "│",
+		};
+		this.dock = entry;
+		this.requestRender();
+
+		return {
+			hide: () => {
+				if (!this.dock || this.dock.component !== component) return;
+				this.hideDock();
+			},
+			setWidth: (width: SizeValue) => {
+				if (!this.dock || this.dock.component !== component) return;
+				this.dock.options.width = width;
+				this.requestRender();
+			},
+			focus: () => {
+				if (!this.dock || this.dock.component !== component) return;
+				this.setFocus(component);
+				this.requestRender();
+			},
+		};
+	}
+
+	hasDock(): boolean {
+		return this.dock !== null && !this.dock.hidden;
+	}
+
+	hideDock(): void {
+		if (!this.dock) return;
+		const dockComponent = this.dock.component;
+		this.dock = null;
+		if (this.focusedComponent === dockComponent) {
+			this.setFocus(this.lastMainFocus);
+		}
+		this.requestRender();
+	}
+
+	focusDock(): boolean {
+		if (!this.dock || this.dock.hidden) return false;
+		this.setFocus(this.dock.component);
+		this.requestRender();
+		return true;
+	}
+
+	focusMain(): boolean {
+		if (!this.dock) return false;
+		this.setFocus(this.lastMainFocus);
+		this.requestRender();
+		return true;
+	}
+
+	toggleDockFocus(): boolean {
+		if (!this.dock || this.dock.hidden) return false;
+		if (this.focusedComponent === this.dock.component) {
+			return this.focusMain();
+		}
+		return this.focusDock();
 	}
 
 	/**
@@ -367,6 +456,7 @@ export class TUI extends Container {
 
 	override invalidate(): void {
 		super.invalidate();
+		this.dock?.component.invalidate?.();
 		for (const overlay of this.overlayStack) overlay.component.invalidate?.();
 	}
 
@@ -536,6 +626,50 @@ export class TUI extends Container {
 		this.inputBuffer = "";
 		this.cellSizeQueryPending = false; // Give up waiting
 		return result;
+	}
+
+	override render(width: number): string[] {
+		if (!this.dock || this.dock.hidden) {
+			return super.render(width);
+		}
+
+		const separator = this.dock.separator || "│";
+		const separatorWidth = Math.max(1, visibleWidth(separator));
+		const dockWidth = this.resolveDockWidth(this.dock.options, width, separatorWidth);
+		const mainWidth = Math.max(1, width - dockWidth - separatorWidth);
+
+		const dockLines = this.dock.component.render(dockWidth);
+		const mainLines = super.render(mainWidth);
+		const lineCount = Math.max(dockLines.length, mainLines.length);
+		const lines: string[] = [];
+
+		for (let i = 0; i < lineCount; i++) {
+			const dockLine = dockLines[i] ?? "";
+			const mainLine = mainLines[i] ?? "";
+			const left = this.padAndClampLine(dockLine, dockWidth);
+			const right = this.padAndClampLine(mainLine, mainWidth);
+			lines.push(`${left}${separator}${right}`);
+		}
+
+		if (lineCount === 0) {
+			lines.push(`${" ".repeat(dockWidth)}${separator}${" ".repeat(mainWidth)}`);
+		}
+
+		return lines;
+	}
+
+	private resolveDockWidth(options: DockOptions, totalWidth: number, separatorWidth: number): number {
+		const maxDockWidth = Math.max(1, totalWidth - separatorWidth - 1);
+		const parsedWidth = parseSizeValue(options.width, totalWidth) ?? Math.floor(totalWidth * 0.32);
+		const minWidth = Math.max(1, options.minWidth ?? 24);
+		const maxWidth = Math.max(minWidth, options.maxWidth ?? maxDockWidth);
+		return Math.max(minWidth, Math.min(parsedWidth, maxWidth, maxDockWidth));
+	}
+
+	private padAndClampLine(line: string, width: number): string {
+		const clamped = visibleWidth(line) > width ? sliceByColumn(line, 0, width, true) : line;
+		const padding = Math.max(0, width - visibleWidth(clamped));
+		return `${clamped}${" ".repeat(padding)}`;
 	}
 
 	/**

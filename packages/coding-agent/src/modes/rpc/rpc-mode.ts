@@ -179,6 +179,10 @@ export async function runRpcMode(session: AgentSession): Promise<never> {
 			// Component factories are not supported in RPC mode - would need TUI access
 		},
 
+		setLeftDock(): void {
+			// Left dock is interactive/TUI-only. RPC mode does not support split panes.
+		},
+
 		setFooter(_factory: unknown): void {
 			// Custom footer not supported in RPC mode - requires TUI access
 		},

@@ -59,6 +59,7 @@ export type {
 	ExtensionFactory,
 	ExtensionFlag,
 	ExtensionHandler,
+	ExtensionLeftDockOptions,
 	// Runtime
 	ExtensionRuntime,
 	ExtensionShortcut,

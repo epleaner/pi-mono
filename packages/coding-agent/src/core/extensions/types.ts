@@ -30,6 +30,7 @@ import type {
 import type {
 	AutocompleteItem,
 	Component,
+	DockOptions,
 	EditorComponent,
 	EditorTheme,
 	KeyId,
@@ -97,6 +98,11 @@ export interface ExtensionWidgetOptions {
 	placement?: WidgetPlacement;
 }
 
+export interface ExtensionLeftDockOptions extends DockOptions {
+	/** Focus the dock component immediately after mounting/updating. */
+	focus?: boolean;
+}
+
 /** Raw terminal input listener for extensions. */
 export type TerminalInputHandler = (data: string) => { consume?: boolean; data?: string } | undefined;
 
@@ -132,6 +138,14 @@ export interface ExtensionUIContext {
 		key: string,
 		content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
 		options?: ExtensionWidgetOptions,
+	): void;
+
+	/** Mount or update a persistent left dock component. Only one dock is rendered at a time (last write wins). */
+	setLeftDock(key: string, content: string[] | undefined, options?: ExtensionLeftDockOptions): void;
+	setLeftDock(
+		key: string,
+		content: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined,
+		options?: ExtensionLeftDockOptions,
 	): void;
 
 	/** Set a custom footer component, or undefined to restore the built-in footer.
